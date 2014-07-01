@@ -10,12 +10,13 @@ FONT_SCALE = 0.5
 TABULATION_STEPS = 200
 
 
-def angle(a, b, c):
-    ba = (b - a)[0]
-    cb = (c - b)[0]
+def angle(vec):
+    return math.atan2(vec[0][1], vec[0][0])
 
-    ang1 = math.atan2(ba[0], ba[1])
-    ang2 = math.atan2(cb[0], cb[1])
+
+def angle_by_3_points(a, b, c):
+    ang1 = angle(b - a)
+    ang2 = angle(c - b)
 
     return ang2 - ang1
 
@@ -57,9 +58,10 @@ class Edge(object):
         cp1 = self.path[0]
         cp2 = self.path[-1]
         self.env = [[1., 0.]]
+        self.edge_angle = angle(cp1 - cp2)
 
         for e in self.path[1:-1]:
-            alpha = angle(cp1, cp2, e)
+            alpha = angle_by_3_points(cp1, cp2, e)
             l = (cp2 - e)[0]
             l = math.sqrt(l[0] ** 2 + l[1] ** 2)
             self.env.append([-l * math.cos(alpha) / self.edge_len,
@@ -69,7 +71,9 @@ class Edge(object):
         self.env.reverse()
 
         self.env = smooth(self.env, 5)
-        self.is_paper_edge = abs(self.edge_len - self.path_len) < 1
+        self.env_avg = sum(abs(x[1]) for x in self.env) / self.edge_len
+
+        self.is_paper_edge = self.env_avg < 0.2
 
     def interpolate_env(self, x):
         assert x >= 0 and x <= 1
@@ -126,6 +130,11 @@ def find_match(edge, edges, top_n=3):
     return sorted(candidates_with_metric, key=lambda x: x[1])[:top_n]
 
 
+def find_best_seed(edges):
+    edges = filter(lambda x: not x.used, edges)
+    edges = sorted(edges, key=lambda x: (x.is_paper_edge, -x.edge_len))
+    return edges[0]
+
 if __name__ == '__main__':
     fname = sys.argv[1] if len(sys.argv) > 1 else "src/simple.png"
 
@@ -146,8 +155,8 @@ if __name__ == '__main__':
         sides = []
 
         for i in xrange(len(approx)):
-            ang = (angle(approx[i - 2], approx[i - 1],
-                         approx[i])) * 180 / math.pi
+            ang = (angle_by_3_points(approx[i - 2], approx[i - 1],
+                                     approx[i])) * 180 / math.pi
 
             ang = (ang + 360) % 360
             if ang > 180:
@@ -196,7 +205,10 @@ if __name__ == '__main__':
                     (0, 0, 255))
 
     print("Matches for %s:" % all_edges[2])
+
+    seed = find_best_seed(all_edges)
     print(find_match(all_edges[2], all_edges))
+
     # pylab.legend(loc='best', shadow=True)
     cv2.imshow("src", src)
     pylab.show()
